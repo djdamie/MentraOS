@@ -773,6 +773,10 @@ jobs:
             '/staging_live_version.json' \
             '  Content-Type: application/json' \
             '  Cache-Control: public, max-age=0, must-revalidate' \
+            '' \
+            '/bluetooth-sdk/*' \
+            '  Content-Type: application/json' \
+            '  Cache-Control: public, max-age=31536000, immutable' \
             > asg-pages-site/_headers
 
           if [ -e asg-pages-site/prod_live_version.json ]; then
@@ -785,6 +789,50 @@ jobs:
             and (.mtk_patches | type == "array" and length > 0)
             and (.bes_firmware | type == "object")
           ' asg-pages-site/staging_live_version.json >/dev/null
+
+      - name: Restore SDK OTA manifests into staging Pages site
+        if: needs.build-asg.result == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const {execFileSync} = require('child_process');
+            const siteDir = 'asg-pages-site';
+            const releaseTag = 'bluetooth-sdk-ota';
+
+            let release;
+            try {
+              release = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: releaseTag,
+              });
+            } catch (error) {
+              if (error.status === 404) {
+                console.log(`No ${releaseTag} release yet; skipping SDK manifest restore.`);
+                return;
+              }
+              throw error;
+            }
+
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.data.id,
+              per_page: 100,
+            });
+
+            for (const asset of assets) {
+              const match = asset.name.match(/^bluetooth-sdk-(.+)-version\.json$/);
+              if (!match) continue;
+              const sdkVersion = match[1];
+              const target = path.join(siteDir, 'bluetooth-sdk', sdkVersion, 'version.json');
+              fs.mkdirSync(path.dirname(target), {recursive: true});
+              execFileSync('curl', ['--fail', '--silent', '--show-error', '--location', asset.browser_download_url, '-o', target], {stdio: 'inherit'});
+              execFileSync('jq', ['-e', '.apps["com.mentra.asg_client"].versionCode | type == "number"', target], {stdio: 'inherit'});
+              console.log(`Restored SDK OTA manifest ${target}`);
+            }
 
       - name: Upload ASG OTA manifest to staging-builds release
         # Same ref guard as the Pages deploy: a workflow_dispatch run from a

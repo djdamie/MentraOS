@@ -51,7 +51,7 @@ workflow for a real release:
 | `MAVEN_SIGNING_PASSWORD` | Secret | Passphrase for `MAVEN_SIGNING_KEY`. |
 | `MENTRA_BLUETOOTH_SDK_IOS_PUSH_TOKEN` | Secret | GitHub token with write access to `Mentra-Community/mentra-bluetooth-sdk-ios` for pushing `main` and version tags. |
 | `CLOUDFLARE_ACCOUNT_ID` | Secret | Cloudflare account that owns the `mentra-live-ota-staging` Pages project. |
-| `CLOUDFLARE_API_TOKEN` | Secret | Cloudflare API token allowed to deploy the `mentra-live-ota-staging` Pages project. |
+| `CLOUDFLARE_PAGES_API_TOKEN` | Secret | Cloudflare API token allowed to deploy the `mentra-live-ota-staging` Pages project. |
 | `SONATYPE_PUBLISHING_TYPE` | Variable | Sonatype Central upload mode; keep `user_managed` unless maintainers intentionally switch to an automatic release mode. |
 
 ## Flow
