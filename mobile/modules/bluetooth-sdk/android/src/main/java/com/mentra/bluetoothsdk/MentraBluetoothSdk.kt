@@ -1052,6 +1052,8 @@ class MentraBluetoothSdk private constructor(
         if (isLegacyAsgOtaStartBuild(status.buildNumber)) {
             return deviceUrl.ifBlank { OtaManifestDefaults.PROD_OTA_VERSION_URL }
         }
+        // SDK consumers are pinned to the manifest built for their SDK version.
+        // A future glasses-advertised URL should not silently change that pairing.
         return configuredOtaVersionUrl ?: OtaManifestDefaults.defaultOtaVersionUrl()
     }
 

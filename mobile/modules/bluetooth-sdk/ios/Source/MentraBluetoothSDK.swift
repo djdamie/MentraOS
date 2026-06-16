@@ -1115,6 +1115,8 @@ public final class MentraBluetoothSDK {
         if isLegacyAsgOtaStartBuild(status.buildNumber) {
             return deviceUrl.isEmpty ? OtaManifestDefaults.prodOtaVersionUrl : deviceUrl
         }
+        // SDK consumers are pinned to the manifest built for their SDK version.
+        // A future glasses-advertised URL should not silently change that pairing.
         if let configuredOtaVersionUrl {
             return configuredOtaVersionUrl
         }
