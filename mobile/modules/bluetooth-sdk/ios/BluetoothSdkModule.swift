@@ -426,9 +426,9 @@ public class BluetoothSdkModule: Module, MentraBluetoothSDKDelegate {
         }
 
         Function("getOtaVersionUrl") {
-            self.readOnMainActor {
+            try self.readOnMainActor {
                 let sdk = self.bluetoothSdk()
-                return sdk.getOtaVersionUrl()
+                return try sdk.getOtaVersionUrl()
             }
         }
 

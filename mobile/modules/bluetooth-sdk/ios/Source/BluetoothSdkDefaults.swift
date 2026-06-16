@@ -2,8 +2,10 @@ import Foundation
 
 /// Defaults for the public Bluetooth SDK surface.
 enum BluetoothSdkDefaults {
+    private static let compiledSdkVersion = "0.1.12"
+
     static var sdkVersion: String? {
-        packageVersion(from: sdkBundle)
+        packageVersion(from: sdkBundle) ?? compiledSdkVersion
     }
 
     static let voiceActivityDetectionEnabled = false
