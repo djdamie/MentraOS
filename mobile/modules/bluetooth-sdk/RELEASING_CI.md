@@ -10,7 +10,7 @@ A release is only attempted when the `version` field in
 The same version drives all public artifacts:
 
 - ASG OTA manifest:
-  `https://staging.ota.mentraglass.com/bluetooth-sdk/VERSION/version.json`
+  `https://github.com/Mentra-Community/MentraOS/releases/download/bluetooth-sdk-ota/bluetooth-sdk-VERSION-version.json`
 - ASG APK release asset under the persistent `bluetooth-sdk-ota` release tag
 - npm staged package: `@mentra/bluetooth-sdk`
 - Maven Central: `com.mentraglass:bluetooth-sdk` and `com.mentraglass:lc3Lib`
@@ -50,8 +50,6 @@ workflow for a real release:
 | `MAVEN_SIGNING_KEY` | Secret | ASCII-armored PGP private key used by Gradle in-memory signing. |
 | `MAVEN_SIGNING_PASSWORD` | Secret | Passphrase for `MAVEN_SIGNING_KEY`. |
 | `MENTRA_BLUETOOTH_SDK_IOS_PUSH_TOKEN` | Secret | GitHub token with write access to `Mentra-Community/mentra-bluetooth-sdk-ios` for pushing `main` and version tags. |
-| `CLOUDFLARE_ACCOUNT_ID` | Secret | Cloudflare account that owns the `mentra-live-ota-staging` Pages project. |
-| `CLOUDFLARE_PAGES_API_TOKEN` | Secret | Cloudflare API token allowed to deploy the `mentra-live-ota-staging` Pages project. |
 | `SONATYPE_PUBLISHING_TYPE` | Variable | Sonatype Central upload mode; keep `user_managed` unless maintainers intentionally switch to an automatic release mode. |
 
 ## Flow
@@ -62,18 +60,18 @@ workflow for a real release:
    the detector fails closed; rerun with `workflow_dispatch` and
    `force_release=true` after confirming the version should release.
 2. The SDK OTA job builds the ASG client APK from the same `staging` commit,
-   uploads it to the persistent `bluetooth-sdk-ota` GitHub release with an asset
-   name that includes the SDK version, ASG `versionCode`, and commit SHA, then
-   generates `bluetooth-sdk/VERSION/version.json` with ASG APK metadata plus the
-   MTK and BES metadata from `asg_client/ota_manifests/firmware_live.json`.
+   generates a versioned manifest with ASG APK metadata plus the MTK and BES
+   metadata from `asg_client/ota_manifests/firmware_live.json`, then uploads the
+   APK and manifest to the persistent `bluetooth-sdk-ota` GitHub release. The APK
+   asset name includes the SDK version, ASG `versionCode`, and commit SHA; the
+   manifest asset name includes the SDK version.
    The ASG `versionCode` uses the same Jan 1 2025 wall-clock offset formula as
    rolling staging builds, but uses the release commit timestamp so reruns of the
    same SDK release commit produce the same ASG target.
-3. The SDK OTA job refuses to overwrite an existing manifest URL or release
-   asset for the same SDK version. It rebuilds the Cloudflare Pages payload from
-   the persistent SDK manifest assets, preserves the rolling
-   `staging_live_version.json`, deploys to the staging OTA Pages project, and
-   verifies the custom-domain URL before package publishing starts.
+3. The SDK OTA job verifies the GitHub release manifest URL before package
+   publishing starts. If the same SDK release is rerun after OTA publishing
+   succeeded, existing APK or manifest assets are reused only when their content
+   is byte-for-byte identical; mismatched assets fail hard.
 4. The npm job installs mobile workspace dependencies, builds the SDK package,
    checks whether `@mentra/bluetooth-sdk@VERSION` already exists, runs
    `npm pack --dry-run`, then submits the package with `npm stage publish` when
@@ -103,14 +101,14 @@ the deployment, a maintainer must open
 and manually publish it. The workflow intentionally does not auto-release the
 Sonatype deployment until maintainers decide that is safe.
 
-The SDK OTA manifest and APK are intentionally immutable. Publishing the same
-SDK version twice fails before package artifacts are published; bump the SDK
-version for a new ASG compatibility target. Existing live npm versions and
-SwiftPM tags are skipped. A pending npm staged package for the same version will
-cause `npm stage publish` to fail until the staged package is approved or
-rejected. Maven reruns are safe only after confirming there is no open Sonatype
-deployment for the same version; if Maven Central already shows both artifacts,
-the workflow skips Maven publishing.
+The SDK OTA manifest and APK are intentionally immutable. If an existing OTA
+release asset for the same SDK version has different content, the workflow fails;
+bump the SDK version for a new ASG compatibility target. Existing live npm
+versions and SwiftPM tags are skipped. A pending npm staged package for the same
+version will cause `npm stage publish` to fail until the staged package is
+approved or rejected. Maven reruns are safe only after confirming there is no
+open Sonatype deployment for the same version; if Maven Central already shows
+both artifacts, the workflow skips Maven publishing.
 
 ## Dry Runs and Verification
 
@@ -127,7 +125,7 @@ After a real release:
 ```bash
 npm view @mentra/bluetooth-sdk@VERSION version
 npm stage list @mentra/bluetooth-sdk
-curl -fsS "https://staging.ota.mentraglass.com/bluetooth-sdk/VERSION/version.json"
+curl -fsS "https://github.com/Mentra-Community/MentraOS/releases/download/bluetooth-sdk-ota/bluetooth-sdk-VERSION-version.json"
 curl -fsS "https://repo.maven.apache.org/maven2/com/mentraglass/bluetooth-sdk/VERSION/bluetooth-sdk-VERSION.pom"
 curl -fsS "https://repo.maven.apache.org/maven2/com/mentraglass/lc3Lib/VERSION/lc3Lib-VERSION.pom"
 git ls-remote --tags git@github.com:Mentra-Community/mentra-bluetooth-sdk-ios.git VERSION

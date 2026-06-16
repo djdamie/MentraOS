@@ -7,7 +7,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 internal object OtaManifestDefaults {
-    private const val SDK_OTA_BASE_URL = "https://staging.ota.mentraglass.com/bluetooth-sdk"
+    private const val SDK_OTA_RELEASE_BASE_URL =
+        "https://github.com/Mentra-Community/MentraOS/releases/download/bluetooth-sdk-ota"
     // Keep prod as the legacy-device fallback: pre-override ASG builds ignore
     // ota_start.ota_version_url and use their compiled MentraOS default.
     const val PROD_OTA_VERSION_URL = "https://ota.mentraglass.com/prod_live_version.json"
@@ -20,7 +21,7 @@ internal object OtaManifestDefaults {
                 "Cannot determine Bluetooth SDK version for the default OTA manifest URL.",
             )
         }
-        return "$SDK_OTA_BASE_URL/$sdkVersion/version.json"
+        return "$SDK_OTA_RELEASE_BASE_URL/bluetooth-sdk-$sdkVersion-version.json"
     }
 }
 

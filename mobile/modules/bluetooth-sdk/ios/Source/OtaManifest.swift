@@ -1,7 +1,7 @@
 import Foundation
 
 enum OtaManifestDefaults {
-    private static let sdkOtaBaseUrl = "https://staging.ota.mentraglass.com/bluetooth-sdk"
+    private static let sdkOtaReleaseBaseUrl = "https://github.com/Mentra-Community/MentraOS/releases/download/bluetooth-sdk-ota"
     // Keep prod as the legacy-device fallback: pre-override ASG builds ignore
     // ota_start.ota_version_url and use their compiled MentraOS default.
     static let prodOtaVersionUrl = "https://ota.mentraglass.com/prod_live_version.json"
@@ -15,7 +15,7 @@ enum OtaManifestDefaults {
                 message: "Cannot determine Bluetooth SDK version for the default OTA manifest URL."
             )
         }
-        return "\(sdkOtaBaseUrl)/\(sdkVersion)/version.json"
+        return "\(sdkOtaReleaseBaseUrl)/bluetooth-sdk-\(sdkVersion)-version.json"
     }
 }
 

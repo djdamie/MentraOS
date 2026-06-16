@@ -32,11 +32,7 @@ permissions:
   id-token: write
 
 env:
-  ASG_STAGING_OTA_CUSTOM_DOMAIN_URL: https://staging.ota.mentraglass.com/staging_live_version.json
-  ASG_STAGING_OTA_VERSION_URL: https://mentra-live-ota-staging.pages.dev/staging_live_version.json
-  SDK_OTA_BASE_URL: https://staging.ota.mentraglass.com/bluetooth-sdk
   SDK_OTA_RELEASE_TAG: bluetooth-sdk-ota
-  SDK_OTA_SITE_DIR: bluetooth-sdk-ota-site
   SDK_PACKAGE_DIR: mobile/modules/bluetooth-sdk
   SDK_PACKAGE_JSON: mobile/modules/bluetooth-sdk/package.json
 
@@ -156,54 +152,13 @@ jobs:
           fi
           APK_ASSET="asg-client-sdk-${SDK_VERSION}-vc${VERSION_CODE}-${SHORT_SHA}.apk"
           MANIFEST_ASSET="bluetooth-sdk-${SDK_VERSION}-version.json"
-          MANIFEST_URL="${SDK_OTA_BASE_URL}/${SDK_VERSION}/version.json"
           APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${SDK_OTA_RELEASE_TAG}/${APK_ASSET}"
+          MANIFEST_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${SDK_OTA_RELEASE_TAG}/${MANIFEST_ASSET}"
 
           echo "apk_asset=${APK_ASSET}" >> "$GITHUB_OUTPUT"
           echo "apk_url=${APK_URL}" >> "$GITHUB_OUTPUT"
           echo "manifest_asset=${MANIFEST_ASSET}" >> "$GITHUB_OUTPUT"
           echo "manifest_url=${MANIFEST_URL}" >> "$GITHUB_OUTPUT"
-
-      - name: Refuse duplicate SDK OTA manifest URL
-        if: needs.detect.outputs.dry_run != 'true'
-        run: |
-          set -euo pipefail
-          if curl --fail --silent --show-error --location --head "${{ steps.sdk-ota-info.outputs.manifest_url }}" >/dev/null 2>&1; then
-            echo "SDK OTA manifest already exists at ${{ steps.sdk-ota-info.outputs.manifest_url }}." >&2
-            echo "Refusing to overwrite an immutable SDK OTA manifest." >&2
-            exit 1
-          fi
-
-      - name: Check SDK OTA release assets
-        if: needs.detect.outputs.dry_run != 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const apkAsset = '${{ steps.sdk-ota-info.outputs.apk_asset }}';
-            const manifestAsset = '${{ steps.sdk-ota-info.outputs.manifest_asset }}';
-            let release;
-            try {
-              release = await github.rest.repos.getReleaseByTag({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                tag: process.env.SDK_OTA_RELEASE_TAG,
-              });
-            } catch (error) {
-              if (error.status === 404) {
-                return;
-              }
-              throw error;
-            }
-            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: release.data.id,
-              per_page: 100,
-            });
-            const duplicate = assets.find((asset) => asset.name === apkAsset || asset.name === manifestAsset);
-            if (duplicate) {
-              throw new Error(`Refusing to overwrite immutable SDK OTA release asset ${duplicate.name}.`);
-            }
 
       - name: Setup Java
         uses: actions/setup-java@v3
@@ -289,11 +244,17 @@ jobs:
         with:
           script: |
             const fs = require('fs');
+            const crypto = require('crypto');
+
+            function sha256(data) {
+              return crypto.createHash('sha256').update(data).digest('hex');
+            }
+
             const releaseBody = [
               'Persistent ASG OTA artifacts for Bluetooth SDK releases.',
               '',
               'Each SDK version owns an immutable manifest at:',
-              '`https://staging.ota.mentraglass.com/bluetooth-sdk/<sdkVersion>/version.json`',
+              '`https://github.com/Mentra-Community/MentraOS/releases/download/bluetooth-sdk-ota/bluetooth-sdk-<sdkVersion>-version.json`',
               '',
               'Do not delete assets from this release unless the matching SDK version is intentionally retired.',
             ].join('\n');
@@ -339,10 +300,20 @@ jobs:
             ];
 
             for (const upload of uploads) {
-              if (existingAssets.some((asset) => asset.name === upload.name)) {
-                throw new Error(`Refusing to overwrite immutable SDK OTA release asset ${upload.name}.`);
-              }
               const data = fs.readFileSync(upload.path);
+              const existingAsset = existingAssets.find((asset) => asset.name === upload.name);
+              if (existingAsset) {
+                const existingResponse = await fetch(existingAsset.browser_download_url);
+                if (!existingResponse.ok) {
+                  throw new Error(`Failed to download existing SDK OTA release asset ${upload.name}: HTTP ${existingResponse.status}`);
+                }
+                const existingData = Buffer.from(await existingResponse.arrayBuffer());
+                if (sha256(existingData) !== sha256(data)) {
+                  throw new Error(`Refusing to overwrite immutable SDK OTA release asset ${upload.name}; existing content differs.`);
+                }
+                core.info(`Reusing existing SDK OTA release asset ${upload.name}.`);
+                continue;
+              }
               await github.rest.repos.uploadReleaseAsset({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -359,94 +330,12 @@ jobs:
               body: releaseBody,
             });
 
-      - name: Build SDK OTA Pages payload
-        if: needs.detect.outputs.dry_run != 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const path = require('path');
-            const {execFileSync} = require('child_process');
-            const siteDir = process.env.SDK_OTA_SITE_DIR;
-            fs.rmSync(siteDir, {recursive: true, force: true});
-            fs.mkdirSync(path.join(siteDir, 'bluetooth-sdk'), {recursive: true});
-
-            try {
-              execFileSync('curl', ['--fail', '--silent', '--show-error', '--location', process.env.ASG_STAGING_OTA_CUSTOM_DOMAIN_URL, '-o', path.join(siteDir, 'staging_live_version.json')], {stdio: 'inherit'});
-            } catch {
-              execFileSync('curl', ['--fail', '--silent', '--show-error', '--location', process.env.ASG_STAGING_OTA_VERSION_URL, '-o', path.join(siteDir, 'staging_live_version.json')], {stdio: 'inherit'});
-            }
-            execFileSync('jq', ['-e', '.apps["com.mentra.asg_client"].versionCode | type == "number"', path.join(siteDir, 'staging_live_version.json')], {stdio: 'inherit'});
-
-            const release = await github.rest.repos.getReleaseByTag({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag: process.env.SDK_OTA_RELEASE_TAG,
-            });
-            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: release.data.id,
-              per_page: 100,
-            });
-            for (const asset of assets) {
-              const match = asset.name.match(/^bluetooth-sdk-(.+)-version\.json$/);
-              if (!match) continue;
-              const sdkVersion = match[1];
-              const target = path.join(siteDir, 'bluetooth-sdk', sdkVersion, 'version.json');
-              fs.mkdirSync(path.dirname(target), {recursive: true});
-              execFileSync('curl', ['--fail', '--silent', '--show-error', '--location', asset.browser_download_url, '-o', target], {stdio: 'inherit'});
-            }
-
-            fs.writeFileSync(path.join(siteDir, 'index.html'), `<!doctype html>
-            <html lang="en">
-              <head>
-                <meta charset="UTF-8" />
-                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-                <title>MentraOS Staging OTA</title>
-              </head>
-              <body>
-                <h1>MentraOS Staging OTA</h1>
-                <p><a href="./staging_live_version.json">View rolling staging OTA manifest</a></p>
-              </body>
-            </html>
-            `);
-            fs.writeFileSync(path.join(siteDir, '_headers'), [
-              '/*',
-              '  Access-Control-Allow-Origin: *',
-              '  X-Content-Type-Options: nosniff',
-              '  X-Robots-Tag: noindex',
-              '',
-              '/staging_live_version.json',
-              '  Content-Type: application/json',
-              '  Cache-Control: public, max-age=0, must-revalidate',
-              '',
-              '/bluetooth-sdk/*',
-              '  Content-Type: application/json',
-              '  Cache-Control: public, max-age=31536000, immutable',
-              '',
-            ].join('\n'));
-
-      - name: Publish SDK OTA manifest to Cloudflare Pages
+      - name: Verify SDK OTA manifest release asset
         if: needs.detect.outputs.dry_run != 'true'
         env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_API_TOKEN }}
-          SDK_VERSION: ${{ needs.detect.outputs.version }}
           VERSION_CODE: ${{ steps.asg-build-info.outputs.version_code }}
         run: |
           set -euo pipefail
-          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ] || [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "Cloudflare credentials are required to publish the SDK OTA manifest." >&2
-            exit 1
-          fi
-
-          npx --yes wrangler@4.86.0 pages deploy "$SDK_OTA_SITE_DIR" \
-            --project-name mentra-live-ota-staging \
-            --branch staging \
-            --commit-hash "$GITHUB_SHA" \
-            --commit-dirty=true \
-            --commit-message "Publish Bluetooth SDK ${SDK_VERSION} OTA manifest"
 
           echo "Verifying ${{ steps.sdk-ota-info.outputs.manifest_url }}"
           for attempt in {1..12}; do
